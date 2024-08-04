@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "backend"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.111.1"
+sqlalchemy = "^2.0.31"
+psycopg2 = "^2.9.9"
+fastapi-sessions = "^0.3.2"
+pyjwt = "^2.8.0"
+pytest = "^8.2.2"
+langchain = "^0.2.11"
+langchain-chroma = "^0.1.2"
+sentence-transformers = "^3.0.1"
+pandas = "^2.2.2"
+langchain-ollama = "^0.1.0"
+chromadb = "^0.5.5"
+langchain-huggingface = "^0.0.3"
+langgraph = "^0.1.19"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
