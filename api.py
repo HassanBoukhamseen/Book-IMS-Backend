@@ -20,6 +20,9 @@ from app.services.book_services import (
     delete_book_from_db,
     edit_book_info,
     retrieve_book_by_search_input,
+    register_liked_book,
+    remove_liked_book,
+    retrieve_liked_books_for_user
 )
 from app.services.token_services import create_access_token
 from app.llm_workflow.workflow import assistant
@@ -59,8 +62,27 @@ def read_root(current_user: Annotated[dict, Depends(get_current_user)]):
     return {"Hello": "World"}
 
 @app.get("/books")
-def get_books(start: int=Query(...), end: int=Query(...), order_by: Optional[str] = Query(None)):
+def get_books_without_login(
+        start: int=Query(...), 
+        end: int=Query(...), 
+        order_by: Optional[str] = Query(None)
+    ):
+    
     success, message, books, total_count = retrieve_books_from_db(start=start, end=end, order_by=order_by)
+    if not success:
+        raise HTTPException(status_code=401, detail=message)
+    return {"message": message, "books": books, "count": total_count}
+
+@app.get("/books/users")
+def get_books_with_login(
+        current_user: Annotated[dict, Depends(get_current_user)], 
+        start: int=Query(...), 
+        end: int=Query(...), 
+        order_by: Optional[str] = Query(None)
+    ):
+    if not current_user:
+        return HTTPException(status_code=403, detail="Invalid Authorization")
+    success, message, books, total_count = retrieve_books_from_db(start=start, end=end, order_by=order_by, email=current_user["email"])
     if not success:
         raise HTTPException(status_code=401, detail=message)
     return {"message": message, "books": books, "count": total_count}
@@ -75,11 +97,47 @@ def get_book(book_id: int, current_user: Annotated[dict, Depends(get_current_use
     return {"message": message, "book": book}
 
 @app.get("/books/by-search-input/{search_input}")
-def get_book(search_input: str, start: int = 1, end: int = 10):
+def search_books_without_login(search_input: str, start: int = 1, end: int = 10):
     success, message, books, total_count = retrieve_book_by_search_input(search_input, start, end)
     if not success:
         raise HTTPException(status_code=404, detail=message)
     return {"message": message, "books": books, "count": total_count}
+
+@app.get("/books/users/by-search-input/{search_input}")
+def search_books_with_login(current_user: Annotated[dict, Depends(get_current_user)], search_input: str, start: int = 1, end: int = 10):
+    if not current_user:
+        return HTTPException(status_code=403, detail="Invalid Authorization")
+    success, message, books, total_count = retrieve_book_by_search_input(search_input, start, end, current_user["email"])
+    if not success:
+        raise HTTPException(status_code=404, detail=message)
+    return {"message": message, "books": books, "count": total_count}
+
+@app.get("/books/users/liked-books")
+def get_liked_books(current_user: Annotated[dict, Depends(get_current_user)], start: int, end: int):
+    if not current_user:
+        return HTTPException(status_code=403, detail="Invalid Authorization")
+    success, message, liked_books, total_count = retrieve_liked_books_for_user(current_user["email"], start, end)
+    if not success:
+        raise HTTPException(status_code=404, detail=message)
+    return {"message": message, "liked_books": liked_books, "count": total_count}
+
+@app.post("/books/like/{book_id}")
+def add_liked_book(book_id: str, current_user: Annotated[dict, Depends(get_current_user)]):
+    if not current_user:
+        return HTTPException(status_code=403, detail="Invalid Authorization")
+    success, message = register_liked_book(book_id, current_user["email"])
+    if not success:
+        raise HTTPException(status_code=404, detail=message)
+    return {"message": message}
+
+@app.delete("/books/remove-like/{book_id}")
+def delete_liked_book(book_id: str, current_user: Annotated[dict, Depends(get_current_user)]):
+    if not current_user:
+        return HTTPException(status_code=403, detail="Invalid Authorization")
+    success, message = remove_liked_book(book_id, current_user["email"])
+    if not success:
+        raise HTTPException(status_code=404, detail=message)
+    return {"message": message}
 
 #@ADMIN ONLY
 @app.post("/books")
@@ -100,7 +158,6 @@ def update_book(book_id:int, new_book:BookUpdateCurrent, current_user: dict = De
     if not success:
         return HTTPException(status_code=400, detail=message)               
     return {"message": message, "book_id": book_id}
-
 
 #@ADMIN ONLY
 @app.delete("/books/{book_id}")
@@ -158,16 +215,13 @@ def delete_author(author_id: int, current_user: Annotated[dict, Depends(get_curr
 
 @app.post("/users/register")
 def add_user(user: User):
-    print(user)
     success, message = register_user(user)
-    print(success, message)
     if not success:
         raise HTTPException(status_code=400, detail=message)
     return {"message": message, "user": user.email}
 
 @app.post("/users/login")
 async def auth_user(login_data: Login):
-    print(login_data)
     auth, message = authenticate_user(login_data.username, login_data.password)
     if not auth:
         return HTTPException(status_code=401, detail=message)
@@ -191,7 +245,6 @@ def get_user(current_user: Annotated[dict, Depends(get_current_user)]):
     if not current_user or current_user["role"] != 1:
         return HTTPException(status_code=403, detail="Invalid Authorization")
     success, message, all_users = retrieve_all_users()
-    print(all_users)
     if not success:
         raise HTTPException(status_code=400, detail=message)
     return {"message": message, "users": all_users}
