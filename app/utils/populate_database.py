@@ -6,6 +6,7 @@ from app.database.schemas.books import Book
 from app.database.schemas.preferences import Preferences
 from app.database.schemas.book_author import BookAuthor
 from app.database.schemas.llm_message_hist import MessageHistory
+from app.database.schemas.liked_books import LikedBooks
 from app.utils.hash import deterministic_hash
 import random
 from app.database.schemas.logs import RequestLog
@@ -119,6 +120,9 @@ for i, user in enumerate(users_inserts):
     email = users_inserts[i].email
     preferenc_inserts = [Preferences(email=email, preference=preference) for preference in preferences[i]]
     session.add_all(preferenc_inserts)
+
+likes_inserts = [LikedBooks(book_id="0002005883", email="email_0@gmail.com")]
+session.add_all(likes_inserts)
 
 session.commit()
 def fetch_from_database(table_name):

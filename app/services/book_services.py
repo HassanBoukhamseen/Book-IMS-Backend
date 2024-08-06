@@ -3,6 +3,7 @@ from app.database.connector import connect_to_db
 from app.database.schemas.books import Book
 from app.database.schemas.preferences import Preferences
 from app.database.schemas.book_author import BookAuthor
+from app.database.schemas.liked_books import LikedBooks
 from app.database.schemas.user import User
 from app.database.schemas.author import Author
 from app.services.author_services import retrieve_single_author
@@ -16,6 +17,83 @@ order_by_map = {
     "average_rating_asc": [asc(Book.rating)],
     "average_rating_desc": [desc(Book.rating)]
 }
+def retrieve_liked_books_for_user(email: str, start: int = 0, end: int = 12):
+    engine, session = connect_to_db()
+    try:
+        success, message, liked_books_ids = retrieve_liked_books(email)
+        if success:
+            if liked_books_ids:
+                stmt = session.query(Book).filter(Book.book_id.in_(liked_books_ids))
+                parsed_results = [{
+                    "book_id": row.book_id,
+                    "title": row.title,
+                    "author_name": row.author_name,
+                    "subtitle": row.subtitle,
+                    "thumbnail": row.thumbnail,
+                    "genre": row.genre,
+                    "description": row.description,
+                    "year": row.year,
+                    "average_rating": row.rating,
+                    "num_pages": row.num_pages,
+                    "ratings_count": row.ratings_count,
+                    "liked": 1
+                } for row in stmt.offset(start).limit(end - start)]
+                return True, "Books retrieved successfully", parsed_results, stmt.count()
+            else:
+                return False, "No liked books found for the user", None, 0
+        else:
+            return False, message, None, 0
+    except Exception as e:
+        return False, str(e), None, 0
+    finally:
+        session.close()
+
+
+
+
+def register_liked_book(book_id: str, email: str):
+    engine, session = connect_to_db()
+    try:
+        with engine.connect() as conn:
+            stmt = insert(LikedBooks).values(email=email, book_id=book_id)
+            conn.execute(stmt)
+            conn.commit()
+            return True, "Liked Book Added Successfully"
+    except Exception as e:
+        print(e)
+        return False, str(e)
+    finally:
+        session.close()
+
+def remove_liked_book(book_id: str, email: str):
+    engine, session = connect_to_db()
+    try:
+        with engine.connect() as conn:
+            stmt = delete(LikedBooks).where(LikedBooks.email==email, LikedBooks.book_id == book_id)
+            conn.execute(stmt)
+            conn.commit()
+            return True, "Liked Book removed successfully"
+    except Exception as e:
+        return False, str(e)
+    finally:
+        session.close()
+
+def retrieve_liked_books(email: str):
+    engine, session = connect_to_db()
+    try:
+        with engine.connect() as conn:
+            stmt = select(LikedBooks.book_id).where(LikedBooks.email==email)
+            query = conn.execute(stmt)
+            results = query.fetchall()
+            if results:
+                results = [result[0] for result in results]
+                return True, "Liked book retrieved successfully", results
+            else:
+                return False, "Could not retrieved books", None
+    except Exception as e:
+        return False, str(e), None
+    finally:
+        session.close()
 
 def parse_output(db_output):
     if db_output is None:
@@ -31,8 +109,10 @@ def parse_output(db_output):
                 "year": result[7], 
                 "average_rating": result[8],
                 "num_pages": result[9],
-                "ratings_count": result[10]
+                "ratings_count": result[10],
+                "liked": 0
             } for result in db_output]
+    
     return books
 
 def execute_search_query(stmt, count_stmt, engine):
@@ -42,21 +122,12 @@ def execute_search_query(stmt, count_stmt, engine):
         results = output.fetchall()
         return results, total_count
 
-def retrieve_book_by_search_input(search_input: str, start: int = 0, end: int = 10):
+def retrieve_book_by_search_input(search_input: str, start: int = 0, end: int = 10, email=None):
     try:
-        print(search_input)
         engine, session = connect_to_db()
         search_input = search_input.lower().strip()
-        
-        result = session.query(Book).filter(
-            or_(
-                Book.title.ilike(f'%{search_input}%'),
-                Book.genre.ilike(f'%{search_input}%'),
-                Book.author_name.ilike(f'%{search_input}%')
-            )
-        ).offset(start).limit(end - start)
 
-        count_stmt = session.query(func.count(Book.book_id)).filter(
+        result = session.query(Book).filter(
             or_(
                 Book.title.ilike(f'%{search_input}%'),
                 Book.genre.ilike(f'%{search_input}%'),
@@ -64,8 +135,7 @@ def retrieve_book_by_search_input(search_input: str, start: int = 0, end: int = 
             )
         )
 
-        for row in result:
-            print(row)
+        count_stmt = result.count()
             
         parsed_results = [{
                 "book_id": row.book_id,
@@ -78,11 +148,20 @@ def retrieve_book_by_search_input(search_input: str, start: int = 0, end: int = 
                 "year": row.year,
                 "average_rating": row.rating,
                 "num_pages": row.num_pages,
-                "ratings_count": row.ratings_count
-            } for row in result]
+                "ratings_count": row.ratings_count,
+                "liked": 0
+            } for row in result.offset(start).limit(end - start)]
         
         if len(parsed_results) > 0:
-            return True, "Books retrieved successfully", parsed_results, count_stmt.count()
+            if email:
+                success, message, liked_books = retrieve_liked_books(email)
+                if success:
+                    for i, book in enumerate(parsed_results):
+                        if book["book_id"] in liked_books:
+                            parsed_results[i]["liked"] = 1
+                else:
+                    return False, message, None, None
+            return True, "Books retrieved successfully", parsed_results, count_stmt
         else:
             return False, "Could not retrieve books", None, 0
     except Exception as e:
@@ -136,19 +215,27 @@ def retrieve_single_book(id):
     finally:
         session.close()    
 
-def retrieve_books_from_db(start: int = 1, end: int = 10, order_by=None):
+def retrieve_books_from_db(start: int = 1, end: int = 10, order_by=None, email=None):
     try:
         engine, session = connect_to_db()
         if order_by != None:
             stmt = select(Book).offset(start).limit(end - start).order_by(*order_by_map[order_by])
         else:
             stmt = select(Book).offset(start).limit(end - start)
-
         count_stmt = select(func.count()).select_from(Book)
         
         results, total_count = execute_search_query(stmt, count_stmt, engine)
         parsed_results = parse_output(results)
-        
+
+        if email:
+            success, message, liked_books = retrieve_liked_books(email)
+            if success:
+                print(message)
+                for i, book in enumerate(parsed_results):
+                    if book["book_id"] in liked_books:
+                        parsed_results[i]["liked"] = 1
+            else:
+                return False, message, None, None
         return True, "Books retrieved successfully", parsed_results, total_count
     except Exception as e:
         print(e)
@@ -269,8 +356,40 @@ def edit_book_info(book_id: int, new_book: BookUpdateCurrent):
     return True, "Book information successfully updated"
 
 if __name__ == "__main__":
-    success, message, output, count = retrieve_book_by_search_input("gile", 0, 12)
-    print(success)
-    print(message)
-    print(output)
-    print(count)
+    pass
+    # success, message, output, count = retrieve_book_by_search_input("agatha christie")
+    # print(success)
+    # print(message)
+    # print(output)
+    # print(count)
+    # success, message = register_liked_book(book_id="0002261987", email="email_0@gmail.com")
+    # print("*"*50)
+    # print("REGISTER LIKED BOOK")
+    # print(message)
+    # print("*"*50)
+    # success, message = register_liked_book(book_id="0006163831", email="email_0@gmail.com")
+    # print("*"*50)
+    # print("REGISTER LIKED BOOK")
+    # print(message)
+    # print("*"*50)
+    # success, message, books, count = retrieve_book_by_search_input(search_input="gile", start=0, end=12)
+    # print("*"*50)
+    # print("SEARCH OUTPUT NO EMAIL")
+    # print(message, books)
+    # print("*"*50)
+    # success, message, books, count = retrieve_books_from_db(start=0, end=12)
+    # print("*"*50)
+    # print("ALL BOOKS NO EMAIL")
+    # print(message, books)
+    # print("*"*50)
+    # success, message, books, count = retrieve_book_by_search_input(search_input="gile", start=0, end=12, email="email_0@gmail.com")
+    # print("*"*50)
+    # print("SEARCH OUTPUT WITH EMAIL")
+    # print(message, books)
+    # print("*"*50)
+    # success, message, books, count = retrieve_books_from_db(start=0, end=12, email="email_0@gmail.com")
+    # print("*"*50)
+    # print("ALL BOOKS WITH EMAIL")
+    # print(message, books)
+    # print("*"*50)
+
