@@ -54,4 +54,7 @@ vectorstore = Chroma(
     persist_directory="./chroma_db"
 )
 
-base_retriever = vectorstore.as_retriever(search_kwargs={'k': 7})
+base_retriever = vectorstore.as_retriever()
+
+if __name__ == "__main__":
+    print(base_retriever.invoke("agatha christie book about murder and fiction"))

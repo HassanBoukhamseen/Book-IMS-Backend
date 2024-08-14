@@ -13,7 +13,7 @@ class StreamingGeneratorCallbackHandler(BaseCallbackHandler):
 callback_handler = StreamingGeneratorCallbackHandler()
 callback_manager = CallbackManager([callback_handler])
 
-model = OllamaLLM(model="llama3.1:8b", callback_manager=callback_manager, temperature=0.5)
+model = OllamaLLM(model="llama3.1:8b", callback_manager=callback_manager, temperature=0)
 
 prompt = ChatPromptTemplate.from_messages(
     [MessagesPlaceholder(variable_name="system_message"), MessagesPlaceholder(variable_name="human_messages")]

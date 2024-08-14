@@ -121,7 +121,7 @@ for i, user in enumerate(users_inserts):
     preferenc_inserts = [Preferences(email=email, preference=preference) for preference in preferences[i]]
     session.add_all(preferenc_inserts)
 
-likes_inserts = [LikedBooks(book_id="0002005883", email="email_0@gmail.com")]
+likes_inserts = [LikedBooks(book_id="0002005883", email=email) for email in emails]
 session.add_all(likes_inserts)
 
 session.commit()
